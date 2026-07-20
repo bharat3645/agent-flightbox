@@ -16,6 +16,7 @@ behavioral evidence, recorded at the OS level, replayable after the fact.
 flightbox record -o session.jsonl -watch . -- my-agent --task "fix the bug"
 flightbox summary session.jsonl
 flightbox report session.jsonl        # -> session.html, static, zero JS
+flightbox diff baseline.jsonl session.jsonl   # what surface is new?
 ```
 
 Linux only. Single static binary, stdlib only, no dependencies.
@@ -115,6 +116,31 @@ process timeline bars, network egress table, files-touched table, full event
 log, and the raw JSON. No JavaScript, no external assets, renders under any
 CSP. `flightbox summary` prints the same digest as text.
 
+## Diffing sessions
+
+`flightbox diff baseline.jsonl candidate.jsonl` compares two sessions and
+reports the exec/filesystem/network surface each one reached that the other
+didn't - "did the new agent version touch more?" Argv is deliberately
+excluded from the exec comparison (ports, tmp paths, and request IDs vary
+run to run for the same legitimate binary; comparing on `comm`/`exe` avoids
+that noise). Only *additions* in the candidate are treated as a signal:
+
+```
+$ flightbox diff run-v1.jsonl run-v2.jsonl
+flightbox session diff
+  baseline:  run-v1.jsonl
+  candidate: run-v2.jsonl
+  execs:
+    + curl
+  paths: no change
+  net:
+    + evil.example:443
+  verdict:   candidate reaches new surface (see + lines above)
+```
+
+Exits 1 when the candidate reaches new surface, 0 otherwise - drop it into
+CI as a gate against silent capability creep between agent versions.
+
 ## Privacy stance
 
 flightbox records behavioral metadata only: paths, argv, process names,
@@ -130,7 +156,8 @@ logs of that sensitivity class.
 
 `flightbox record` exits with the child's exit code (128+signal for signal
 deaths); 125 means flightbox itself failed. `summary`/`report` exit 1 on bad
-input, 2 on usage errors.
+input, 2 on usage errors. `diff` exits 1 if the candidate reaches new
+surface, 0 otherwise (also 1 on bad input, 2 on usage errors).
 
 ## Development
 
@@ -152,7 +179,6 @@ CI runs the poll tier unprivileged and the netlink tier under sudo.
   pid-attributed file events, closing the polling gaps without root-only
   netlink.
 - Per-event kernel timestamps on the netlink tier.
-- `flightbox diff` between sessions (did the new agent version touch more?).
 
 ## Related tools
 

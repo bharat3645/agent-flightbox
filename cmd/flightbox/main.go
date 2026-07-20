@@ -30,6 +30,7 @@ Usage:
   flightbox record [flags] -- <command> [args...]   record a session
   flightbox summary <session.jsonl>                 one-screen text digest
   flightbox report [-o out.html] <session.jsonl>    static HTML timeline
+  flightbox diff <baseline.jsonl> <candidate.jsonl>  surface delta between two sessions
   flightbox check                                   probe sensor availability
   flightbox version                                 print version
 
@@ -47,7 +48,10 @@ Record flags:
   -quiet           suppress flightbox status lines on stderr
 
 Exit status: record exits with the child's exit code; %d means flightbox
-itself failed. Linux only (procfs + inotify; netlink proc events as root).
+itself failed. diff exits 1 if the candidate reaches new execs, paths, or
+network destinations the baseline never did (0 otherwise) - usable as a CI
+gate against surface creep between agent runs. Linux only (procfs + inotify;
+netlink proc events as root).
 `
 
 func usage() {
@@ -70,6 +74,8 @@ func run(args []string) int {
 		return cmdSummary(args[1:])
 	case "report":
 		return cmdReport(args[1:])
+	case "diff":
+		return cmdDiff(args[1:])
 	case "check":
 		return cmdCheck()
 	case "version", "-v", "--version":
@@ -174,6 +180,29 @@ func cmdReport(args []string) int {
 		return 1
 	}
 	fmt.Printf("flightbox: report written to %s\n", dst)
+	return 0
+}
+
+func cmdDiff(args []string) int {
+	if len(args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: flightbox diff <baseline.jsonl> <candidate.jsonl>")
+		return 2
+	}
+	baseline, err := session.Read(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "flightbox diff: reading baseline: %v\n", err)
+		return 1
+	}
+	candidate, err := session.Read(args[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "flightbox diff: reading candidate: %v\n", err)
+		return 1
+	}
+	d := report.Diff(baseline, candidate)
+	fmt.Print(report.DiffText(d, args[0], args[1]))
+	if d.HasNewSurface() {
+		return 1
+	}
 	return 0
 }
 

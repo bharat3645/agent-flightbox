@@ -355,7 +355,7 @@ func nlLoop(nl *procconn.Conn, tracker *proctree.Tracker, procRoot string, emit 
 					}
 					emit(session.Event{
 						Kind: session.KindExec, PID: re.PID, Comm: comm,
-						Exe: proctree.Exe(procRoot, re.PID),
+						Exe:  proctree.Exe(procRoot, re.PID),
 						Argv: argv, Truncated: trunc, Sensor: "netlink",
 					})
 				}

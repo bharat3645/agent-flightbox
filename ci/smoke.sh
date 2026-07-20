@@ -171,7 +171,16 @@ $FLIGHTBOX version | grep -q "flightbox" || fail "version output wrong"
 check
 
 # --- 7. netlink tier under sudo (exact fork/exec/exit) --------------------
-if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+# sudo alone isn't sufficient: the kernel must also support the proc-events
+# connector (CONFIG_PROC_EVENTS). Some sandboxed Linux environments (e.g.
+# Docker Desktop's linuxkit VM) grant root but the socket() call itself
+# returns "protocol not supported" — `flightbox check` already probes this
+# exactly, so ask it before committing to a hard netlink assertion instead
+# of assuming root implies netlink (the same class of wrong assumption
+# run #1's CI red caught in the other direction: unprivileged doesn't imply
+# no-netlink on GitHub-hosted runners).
+if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null && \
+    sudo $FLIGHTBOX check 2>&1 | grep -q "netlink:  ok"; then
     SESSION_NL="$TMP/netlink.jsonl"
     WATCH_NL="$TMP/wn"
     mkdir "$WATCH_NL"
@@ -194,7 +203,7 @@ if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
         --expect-perm 0600 || fail "netlink-tier session audit failed"
     check
 else
-    echo "smoke: sudo unavailable, skipping netlink tier section"
+    echo "smoke: sudo or kernel proc-events connector unavailable, skipping netlink tier section"
 fi
 
 echo "DRIVER OK ($CHECKS checks)"
