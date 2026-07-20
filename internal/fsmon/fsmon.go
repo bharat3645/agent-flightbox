@@ -112,11 +112,24 @@ func (w *Watcher) addRecursive(root string) (int, error) {
 
 // Run delivers events via emit until Close is called. It blocks; run it in
 // a goroutine. Calling Run more than once is a no-op.
+//
+// wg.Add(1) happens before the CompareAndSwap on purpose: the atomic
+// Store/Load pair on started only establishes a happens-before edge for
+// code sequenced before the write propagating to code sequenced after the
+// corresponding read. Close() observes started via w.started.Load() and
+// then calls wg.Wait() - if Add(1) were sequenced after the CAS (as it
+// was before this fix), Close() could reach Wait() on a zero-valued
+// WaitGroup before this goroutine ever calls Add(1), which is a data race
+// (and explicit WaitGroup misuse) that -race correctly flags. Adding
+// before the CAS, with a compensating Done() on CAS failure, keeps Run()
+// idempotent and keeps the Close()-without-Run() path (used by `flightbox
+// check`) safe: started stays false there, so Close() never calls Wait().
 func (w *Watcher) Run(emit func(session.Event)) {
+	w.wg.Add(1)
 	if !w.started.CompareAndSwap(false, true) {
+		w.wg.Done()
 		return
 	}
-	w.wg.Add(1)
 	defer w.wg.Done()
 	buf := make([]byte, 64*1024)
 	epevs := make([]syscall.EpollEvent, 1)

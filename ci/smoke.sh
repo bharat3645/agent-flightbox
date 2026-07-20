@@ -94,24 +94,46 @@ check
     --expect-perm 0600 || fail "poll-tier session audit failed"
 check
 
-# --- 2. auto backend degrades honestly without privilege ------------------
-if [ "$(id -u)" -ne 0 ]; then
-    SESSION_AUTO="$TMP/auto.jsonl"
-    WATCH_AUTO="$TMP/wa"
-    mkdir "$WATCH_AUTO"
-    FB_EXIT=0
-    $FLIGHTBOX record -o "$SESSION_AUTO" -watch "$WATCH_AUTO" -backend auto \
-        -proc-poll 15ms -net-poll 15ms -quiet \
-        -- bash -c "echo probe > \"$WATCH_AUTO/p.txt\"; sleep 0.1" || FB_EXIT=$?
-    [ "$FB_EXIT" -eq 0 ] || fail "auto-backend record failed with $FB_EXIT"
-    check
-    "$PY" ci/check_session.py "$SESSION_AUTO" \
-        --backend poll \
-        --expect-degraded "netlink proc connector unavailable" \
-        --expect-fs-path "$WATCH_AUTO/p.txt" \
-        --expect-child-exit 0 || fail "degradation audit failed"
-    check
-fi
+# --- 2. auto backend is honest about whatever tier it actually got --------
+# Do not assume uid 0 is required for the netlink proc connector: some CI
+# runners grant it to unprivileged users (observed on GitHub-hosted
+# ubuntu-latest). So this section probes the *actual* outcome rather than
+# predicting it from id -u, and asserts internal consistency: netlink tier
+# must carry no degradation, poll tier must explain why it fell back.
+SESSION_AUTO="$TMP/auto.jsonl"
+WATCH_AUTO="$TMP/wa"
+mkdir "$WATCH_AUTO"
+FB_EXIT=0
+$FLIGHTBOX record -o "$SESSION_AUTO" -watch "$WATCH_AUTO" -backend auto \
+    -proc-poll 15ms -net-poll 15ms -quiet \
+    -- bash -c "echo probe > \"$WATCH_AUTO/p.txt\"; sleep 0.1" || FB_EXIT=$?
+[ "$FB_EXIT" -eq 0 ] || fail "auto-backend record failed with $FB_EXIT"
+check
+ACTUAL_BACKEND=$("$PY" -c '
+import json, sys
+with open(sys.argv[1]) as f:
+    print(json.loads(f.readline())["sensors"]["proc"])
+' "$SESSION_AUTO") || fail "could not read auto-backend session header"
+case "$ACTUAL_BACKEND" in
+    netlink)
+        "$PY" ci/check_session.py "$SESSION_AUTO" \
+            --backend netlink \
+            --forbid-degraded \
+            --expect-fs-path "$WATCH_AUTO/p.txt" \
+            --expect-child-exit 0 || fail "auto-backend (netlink-capable env) session audit failed"
+        ;;
+    poll)
+        "$PY" ci/check_session.py "$SESSION_AUTO" \
+            --backend poll \
+            --expect-degraded "netlink proc connector unavailable" \
+            --expect-fs-path "$WATCH_AUTO/p.txt" \
+            --expect-child-exit 0 || fail "degradation audit failed"
+        ;;
+    *)
+        fail "auto backend selected unexpected proc sensor $ACTUAL_BACKEND"
+        ;;
+esac
+check
 
 # --- 3. summary -----------------------------------------------------------
 SUMMARY=$($FLIGHTBOX summary "$SESSION") || fail "summary exited nonzero"
