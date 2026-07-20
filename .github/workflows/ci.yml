@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - name: gofmt (diagnostic, non-blocking)
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "::warning::gofmt would reformat:"
+            echo "$out"
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test (race)
+        run: go test -race -count=1 ./...
+      - name: go build
+        run: go build -o /tmp/flightbox ./cmd/flightbox
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - name: build binary
+        run: go build -o flightbox ./cmd/flightbox
+      - name: harness self-test against the reference mock
+        run: FLIGHTBOX="python3 ci/mock_flightbox.py" bash ci/smoke.sh
+      - name: end-to-end smoke against the real binary
+        run: FLIGHTBOX=./flightbox bash ci/smoke.sh
