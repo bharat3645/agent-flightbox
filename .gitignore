@@ -1,0 +1,4 @@
+/flightbox
+*.jsonl
+*.html
+__pycache__/
