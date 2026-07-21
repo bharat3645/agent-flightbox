@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-07-21
+
+First tagged release.
 
 - `flightbox diff <baseline.jsonl> <candidate.jsonl>`: reports the
   exec/filesystem/network surface the candidate session reached that the
   baseline didn't (argv excluded from exec identity to avoid run-to-run
   noise). Exits 1 on new surface, usable as a CI gate against capability
-  creep between agent runs. Closes the `flightbox diff` roadmap item.
+  creep between agent runs.
 - CI smoke harness: the sudo/netlink-tier section no longer assumes root
   implies a working proc-events connector. `ci/smoke.sh` now probes
   `flightbox check` for `netlink:  ok` before running the forced
@@ -15,10 +17,6 @@
   linuxkit VM during local verification). GitHub Actions' `ubuntu-latest`
   supports the connector, so this only changes behavior on environments
   that previously couldn't have passed the section anyway.
-
-## 0.1.0 - 2026-07-18
-
-First release.
 
 - `flightbox record [flags] -- <command>`: records a process tree's
   behavior into a JSONL session file (schema v1, 0600).
